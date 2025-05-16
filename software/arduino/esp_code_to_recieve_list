@@ -1,0 +1,90 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <ArduinoJson.h>
+#include <map>
+
+// Set up Wi-Fi as Access Point
+const char *ssid = "ESP32_Hotspot"; // Access point name
+const char *password = "12345678";  // Access point password
+
+WebServer server(80);
+
+// Struct to hold each record
+struct PortTime {
+  String port;
+  int port_no;
+  unsigned long time;
+};
+
+// Array to hold all records
+std::map<int, PortTime> portTimeDict;
+
+// Function to handle POST request and receive records
+void handlePost() {
+  // Check if the request body is available
+  if (server.hasArg("plain") == false) {
+    server.send(400, "application/json", "{\"error\":\"No data received\"}");
+    return;
+  }
+
+  String body = server.arg("plain");
+
+  // Create a JSON document
+  DynamicJsonDocument doc(1024);
+
+  // Parse the incoming JSON
+  DeserializationError error = deserializeJson(doc, body);
+
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON format\"}");
+    return;
+  }
+
+  // Process each record in the JSON array
+  JsonArray arr = doc.as<JsonArray>();
+  int i = 0;
+  for (JsonObject obj : arr) {
+    portTimeDict[i] = {obj["port"].as<String>(), obj["port_no"], obj["time"]};
+    i++;
+  }
+
+  // Respond back to the Flutter app
+  server.send(200, "application/json", "{\"status\":\"Records received successfully\"}");
+
+  // Print records to serial monitor
+  Serial.println("Received records:");
+  for (int i = 0; i < portTimeDict.size(); i++) {
+    Serial.print("Port ");
+    Serial.print(portTimeDict[i].port);
+    Serial.print(", Port no ");
+    Serial.print(portTimeDict[i].port_no);
+    Serial.print(", time ");
+    Serial.println(portTimeDict[i].time);
+  }
+}
+
+void setup() {
+  // Start the serial monitor
+  Serial.begin(115200);
+  delay(1000);
+
+  // Start Wi-Fi as Access Point
+  WiFi.softAP(ssid, password);
+  Serial.println("ESP32 is now an Access Point");
+
+  // Print the IP address of the ESP32
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.softAPIP());
+
+  // Define the route for handling the POST request
+  server.on("/receive", HTTP_POST, handlePost);
+
+  // Start the HTTP server
+  server.begin();
+  Serial.println("HTTP server started");
+}
+
+void loop() {
+  // Handle incoming client requests
+  server.handleClient();
+}
