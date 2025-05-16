@@ -1,0 +1,114 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <ArduinoJson.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <vector>
+
+// Wi-Fi credentials
+const char *ssid = "ESP32_Hotspot";
+const char *password = "12345678";
+
+WebServer server(80);
+
+// Record structure
+struct Record {
+  String letter;
+  int number1;
+  int number2;
+};
+
+// Records vector
+std::vector<Record> records;
+
+// OLED display settings
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+// Display the records on OLED
+void displayRecords() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+
+  int line = 0;
+  for (const auto &r : records) {
+    String lineText = r.letter + ":" + String(r.number1) + "," + String(r.number2);
+    display.setCursor(0, 6 + line * 10);
+    display.println(lineText);
+    line++;
+    if (line >= 6) break; // Avoid overflow (6 lines max for 64px height at size 1)
+  }
+
+  display.display();
+}
+
+// Handle POST from Flutter app
+void handlePost() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No data received\"}");
+    return;
+  }
+
+  String body = server.arg("plain");
+  DynamicJsonDocument doc(1024);
+  DeserializationError error = deserializeJson(doc, body);
+
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON format\"}");
+    return;
+  }
+
+  records.clear();
+  JsonArray arr = doc.as<JsonArray>();
+  for (JsonObject obj : arr) {
+    Record r;
+    r.letter = obj["letter"].as<String>();
+    r.number1 = obj["num1"];
+    r.number2 = obj["num2"];
+    records.push_back(r);
+  }
+
+  server.send(200, "application/json", "{\"status\":\"Records received successfully\"}");
+
+  Serial.println("Received records:");
+  for (const auto& r : records) {
+    Serial.printf("Letter: %s, Number 1: %d, Number 2: %d\n", r.letter.c_str(), r.number1, r.number2);
+  }
+
+  displayRecords(); // Show the records on the OLED
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  // Start OLED display
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(F("OLED init failed"));
+    while (true); // halt if OLED not found
+  }
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 6);
+  display.println("ESP32 Booting...");
+  display.display();
+
+  // Start Wi-Fi AP
+  WiFi.softAP(ssid, password);
+  Serial.println("ESP32 is now an Access Point");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.softAPIP());
+
+  // Start web server
+  server.on("/receive", HTTP_POST, handlePost);
+  server.begin();
+  Serial.println("HTTP server started");
+}
+
+void loop() {
+  server.handleClient();
+}
