@@ -1,0 +1,110 @@
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+
+void main() => runApp(MyApp());
+
+class Record {
+  String port;
+  int port_no;
+  int time;
+
+  Record(this.port, this.port_no, this.time);
+
+  Map<String, dynamic> toJson() => {
+        'port': port,
+        'port no': port_no,
+        'time': time,
+      };
+}
+
+class MyApp extends StatefulWidget {
+  const MyApp({super.key});
+
+  @override
+  _MyAppState createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  final _portController = TextEditingController();
+  final _portnoController = TextEditingController();
+  final _timeController = TextEditingController();
+  List<Record> records = [];
+
+  final String espIp = "192.168.4.1"; // ESP AP IP
+
+  void _addRecord() {
+    if (_portController.text.isEmpty ||
+        _portnoController.text.isEmpty ||
+        _timeController.text.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      records.add(Record(
+        _portController.text.trim(),
+        int.parse(_portnoController.text),
+        int.parse(_timeController.text),
+      ));
+      _portController.clear();
+      _portnoController.clear();
+      _timeController.clear();
+    });
+  }
+
+  void _sendRecords() async {
+    final url = Uri.parse('http://$espIp/receive');
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {"Content-Type": "application/json"},
+        body: json.encode(records.map((r) => r.toJson()).toList()),
+      );
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Records sent successfully")),
+        );
+      } else {
+        throw Exception("Failed to send");
+      }
+    } catch (e) {
+      print(e);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed to send records")),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: Scaffold(
+        appBar: AppBar(title: Text("Send to ESP")),
+        body: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            children: [
+              TextField(controller: _portController, decoration: InputDecoration(labelText: 'port')),
+              TextField(controller: _portnoController, decoration: InputDecoration(labelText: 'port no'), keyboardType: TextInputType.number),
+              TextField(controller: _timeController, decoration: InputDecoration(labelText: 'time'), keyboardType: TextInputType.number),
+              ElevatedButton(onPressed: _addRecord, child: Text("Save Record")),
+              Divider(),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: records.length,
+                  itemBuilder: (_, i) {
+                    final r = records[i];
+                    return ListTile(title: Text("${r.port}, ${r.port_no}, ${r.time}"));
+                  },
+                ),
+              ),
+              ElevatedButton(onPressed: _sendRecords, child: Text("Send All Records"))
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
