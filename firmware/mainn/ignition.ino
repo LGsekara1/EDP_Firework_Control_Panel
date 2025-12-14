@@ -46,7 +46,7 @@ void receiveCallback(const esp_now_recv_info_t *info, const uint8_t *data, int d
     Serial.println("Invalid data length received.");
     return;
   }
-
+x
   int receivedIndex;
   memcpy(&receivedIndex, data, sizeof(int));
 
